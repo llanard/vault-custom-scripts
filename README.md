@@ -34,3 +34,18 @@ export VAULT_ADDR=https://127.0.0.1:8200
 export VAULT_TOKEN=<token>
 ./raw.sh
 ```
+
+
+## Test Vault maximum number of namespaces
+Create 10 000 namespaces with 0 kv secret engines inside, with a tree depth of 3 levels (root/level2/level3), with 10 sub_namespaces in each namespaces, and 50 workers.
+Vault usually takes between 10 and 12Go RAM when this script is running.
+```bash
+python3 vault_namespace.py -n 10000 -x 0 --depth 3 --ns-level2 10 --workers 50 --insecure 
+```
+Results on Mac M4:
+test avec namespace name : ns-00000 8 caractères
+- 9144 namespaces crées
+test avec namespace name : stress-test-louis-000000 24 caractères
+- 9143 namespaces créés
+test avec namespace name : ns00001/ns00001-0001 24 caractères & 1 KV par Namepace
+- 6053 namespaces créés 
