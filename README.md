@@ -56,4 +56,4 @@ Test with namespace name ns00001/ns00001-0001 24 characters & and 0 KV per Namep
 Test with namespace name ns00001/ns00001-0001 24 characters and 1 KV per Namepace
 - 6053 created namespaces
 Test with namespace name ns00001/ns00001-0001 24 characters and 2 KV per Namepace
-- 4624 created namespaces
+- 3743 created namespaces
