@@ -15,7 +15,7 @@ créer 3 user : kerberos, ldap et louis
 
 AD CS 
 Copier le template "kerberos authentification" et nommer le LDAPS
-Suivre ce tutoriel : https://www.youtube.com/watch?v=DCkzr8DslkY 
+Suivre ce tutoriel : https://www.youtube.com/watch?v=DCkzr8DslkY
 
 2. Créer les keytab sur l'AD pour kerberos et louis en respectant le kvno, puis scp sur serveur linux Vault
 
@@ -83,7 +83,8 @@ vault login -method=kerberos username=louis service=HTTP/vault.lanard.local real
 -> Vous devez recevoir un token Vault.
 
 
-Troubleshooting
+
+## Troubleshooting
 1. erreur vide
 Error authenticating: Error making API request.
 
