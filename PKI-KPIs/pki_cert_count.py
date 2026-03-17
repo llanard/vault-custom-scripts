@@ -90,13 +90,14 @@ def main():
     grand_total_certs = 0
     grand_total_secrets = 0
 
-    for ns in namespaces:
+    total_ns = len(namespaces)
+    for i, ns in enumerate(namespaces, 1):
         ns_display = ns.rstrip("/") if ns else "(root)"
+        print(f"[{i}/{total_ns}] Namespace: {ns_display}")
         engines = list_engines_by_type(namespace=ns or None)
         pki_engines = engines["pki"]
         kv_engines = engines["kv"]
 
-        print(f"Namespace: {ns_display}")
         print(f"  PKI engines: {len(pki_engines)}  |  KV engines: {len(kv_engines)}")
 
         if pki_engines:
