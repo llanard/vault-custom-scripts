@@ -5,17 +5,43 @@ set -uo pipefail
 
 VAULT_ADDR="${VAULT_ADDR:-https://127.0.0.1:8200}"
 VAULT_TOKEN="${VAULT_TOKEN:-}"
+DEBUG=false
+
+if [[ "${1:-}" == "--debug" ]]; then
+    DEBUG=true
+fi
+
+debug() {
+    if $DEBUG; then
+        echo "  [DEBUG] $*" >&2
+    fi
+}
 
 vault_request() {
     local method="$1" path="$2" namespace="${3:-}"
     local -a headers=(-H "X-Vault-Token: ${VAULT_TOKEN}")
     [[ -n "$namespace" ]] && headers+=(-H "X-Vault-Namespace: ${namespace}")
     local url="${VAULT_ADDR}/v1/${path}"
+    local original_method="$method"
     if [[ "$method" == "LIST" ]]; then
         method="GET"
         url="${url}?list=true"
     fi
-    curl -sk --connect-timeout 5 --max-time 30 -X "$method" "${headers[@]}" "$url"
+    debug "$original_method $url (namespace: '${namespace:-<none>}')"
+    local resp http_code
+    resp=$(curl -sk --connect-timeout 5 --max-time 30 -w '\n%{http_code}' -X "$method" "${headers[@]}" "$url")
+    http_code=$(echo "$resp" | tail -n1)
+    resp=$(echo "$resp" | sed '$d')
+    debug "HTTP $http_code"
+    if [[ "$http_code" -ge 400 ]] 2>/dev/null; then
+        local errors
+        errors=$(echo "$resp" | jq -r '.errors[]? // empty' 2>/dev/null)
+        if [[ -n "$errors" ]]; then
+            debug "Vault error: $errors"
+        fi
+        return 1
+    fi
+    echo "$resp"
 }
 
 # Recursively list all namespaces starting from parent.
@@ -29,7 +55,7 @@ list_namespaces() {
     fi
 
     local resp keys
-    resp=$(vault_request "LIST" "sys/namespaces" "$parent" 2>/dev/null) || return 0
+    resp=$(vault_request "LIST" "sys/namespaces" "$parent") || return 0
     keys=$(echo "$resp" | jq -r '.data.keys[]? // empty' 2>/dev/null) || return 0
 
     local key child
@@ -48,7 +74,7 @@ list_namespaces() {
 list_engines_by_type() {
     local namespace="${1:-}"
     local resp
-    resp=$(vault_request "GET" "sys/mounts" "$namespace" 2>/dev/null) || return 0
+    resp=$(vault_request "GET" "sys/mounts" "$namespace") || return 0
 
     echo "$resp" | jq -r '
         .data // {} | to_entries[] |
@@ -65,7 +91,7 @@ list_engines_by_type() {
 count_certificates() {
     local pki_path="$1" namespace="${2:-}"
     local resp
-    resp=$(vault_request "LIST" "${pki_path}certs" "$namespace" 2>/dev/null) || { echo 0; return; }
+    resp=$(vault_request "LIST" "${pki_path}certs" "$namespace") || { echo 0; return; }
     echo "$resp" | jq -r '[.data.keys[]? // empty] | length' 2>/dev/null || echo 0
 }
 
@@ -80,7 +106,7 @@ count_kv_secrets() {
     fi
 
     local resp keys
-    resp=$(vault_request "LIST" "$list_path" "$namespace" 2>/dev/null) || { echo 0; return; }
+    resp=$(vault_request "LIST" "$list_path" "$namespace") || { echo 0; return; }
     keys=$(echo "$resp" | jq -r '.data.keys[]? // empty' 2>/dev/null) || { echo 0; return; }
 
     local count=0 key sub
@@ -102,7 +128,9 @@ main() {
         exit 1
     fi
 
-    printf "Vault: %s\n\n" "$VAULT_ADDR"
+    printf "Vault: %s\n" "$VAULT_ADDR"
+    $DEBUG && printf "Debug mode enabled\n"
+    printf "\n"
 
     local -a namespaces=()
     while IFS= read -r _ns_line; do
