@@ -6,10 +6,16 @@ set -uo pipefail
 VAULT_ADDR="${VAULT_ADDR:-https://127.0.0.1:8200}"
 VAULT_TOKEN="${VAULT_TOKEN:-}"
 DEBUG=false
+CSV_FILE=""
 
-if [[ "${1:-}" == "--debug" ]]; then
-    DEBUG=true
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --debug) DEBUG=true ;;
+        --csv)   CSV_FILE="${2:-vault_report.csv}"; shift ;;
+        *)       echo "Usage: $0 [--debug] [--csv <file>]"; exit 1 ;;
+    esac
+    shift
+done
 
 debug() {
     if $DEBUG; then
@@ -130,6 +136,10 @@ main() {
 
     printf "Vault: %s\n" "$VAULT_ADDR"
     $DEBUG && printf "Debug mode enabled\n"
+    if [[ -n "$CSV_FILE" ]]; then
+        echo "namespace,engine_type,engine_path,count" > "$CSV_FILE"
+        printf "CSV output: %s\n" "$CSV_FILE"
+    fi
     printf "\n"
 
     local -a namespaces=()
@@ -179,6 +189,7 @@ main() {
                 cert_count=${cert_count:-0}
                 ns_certs=$((ns_certs + cert_count))
                 printf "    [PKI] %-35s %8d certificates\n" "$pki" "$cert_count"
+                [[ -n "$CSV_FILE" ]] && echo "${ns_display},pki,${pki},${cert_count}" >> "$CSV_FILE"
             done
             grand_total_certs=$((grand_total_certs + ns_certs))
         fi
@@ -192,6 +203,7 @@ main() {
                 secret_count=${secret_count:-0}
                 ns_secrets=$((ns_secrets + secret_count))
                 printf "    [KV%s] %-34s %8d secrets\n" "$version" "$kv_path" "$secret_count"
+                [[ -n "$CSV_FILE" ]] && echo "${ns_display},kv${version},${kv_path},${secret_count}" >> "$CSV_FILE"
             done
             grand_total_secrets=$((grand_total_secrets + ns_secrets))
         fi
