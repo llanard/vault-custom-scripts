@@ -10,7 +10,12 @@ vault_request() {
     local method="$1" path="$2" namespace="${3:-}"
     local -a headers=(-H "X-Vault-Token: ${VAULT_TOKEN}")
     [[ -n "$namespace" ]] && headers+=(-H "X-Vault-Namespace: ${namespace}")
-    curl -sk --connect-timeout 5 --max-time 30 -X "$method" "${headers[@]}" "${VAULT_ADDR}/v1/${path}"
+    local url="${VAULT_ADDR}/v1/${path}"
+    if [[ "$method" == "LIST" ]]; then
+        method="GET"
+        url="${url}?list=true"
+    fi
+    curl -sk --connect-timeout 5 --max-time 30 -X "$method" "${headers[@]}" "$url"
 }
 
 # Recursively list all namespaces starting from parent.
