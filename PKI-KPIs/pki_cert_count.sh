@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Count certificates (PKI) and secrets (KV) across all Vault namespaces.
 
-set -euo pipefail
+set -uo pipefail
 
 VAULT_ADDR="${VAULT_ADDR:-https://127.0.0.1:8200}"
 VAULT_TOKEN="${VAULT_TOKEN:-}"
@@ -143,6 +143,7 @@ main() {
             for pki in "${pki_engines[@]}"; do
                 local cert_count
                 cert_count=$(count_certificates "$pki" "$ns")
+                cert_count=${cert_count:-0}
                 ns_certs=$((ns_certs + cert_count))
                 printf "    [PKI] %-35s %8d certificates\n" "$pki" "$cert_count"
             done
@@ -155,6 +156,7 @@ main() {
                 local kv_path version secret_count
                 IFS='|' read -r kv_path version <<< "$kv_entry"
                 secret_count=$(count_kv_secrets "$kv_path" "$version" "$ns")
+                secret_count=${secret_count:-0}
                 ns_secrets=$((ns_secrets + secret_count))
                 printf "    [KV%s] %-34s %8d secrets\n" "$version" "$kv_path" "$secret_count"
             done
