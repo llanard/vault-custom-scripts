@@ -10,7 +10,7 @@ vault_request() {
     local method="$1" path="$2" namespace="${3:-}"
     local -a headers=(-H "X-Vault-Token: ${VAULT_TOKEN}")
     [[ -n "$namespace" ]] && headers+=(-H "X-Vault-Namespace: ${namespace}")
-    curl -sk -X "$method" "${headers[@]}" "${VAULT_ADDR}/v1/${path}"
+    curl -sk --connect-timeout 5 --max-time 30 -X "$method" "${headers[@]}" "${VAULT_ADDR}/v1/${path}"
 }
 
 # Recursively list all namespaces starting from parent.
@@ -99,15 +99,21 @@ main() {
 
     printf "Vault: %s\n\n" "$VAULT_ADDR"
 
-    local -a namespaces
-    mapfile -t namespaces < <(list_namespaces)
+    local -a namespaces=()
+    while IFS= read -r _ns_line; do
+        namespaces+=("$_ns_line")
+    done < <(list_namespaces)
 
     local grand_total_certs=0
     local grand_total_secrets=0
     local total_ns=${#namespaces[@]}
     local i=0
 
-    for ns in "${namespaces[@]}"; do
+    if [[ $total_ns -eq 0 ]]; then
+        echo "Warning: no namespaces found. Check Vault connectivity and token."
+    fi
+
+    for ns in "${namespaces[@]+${namespaces[@]}}"; do
         i=$((i + 1))
         local ns_display
         if [[ -n "$ns" ]]; then
