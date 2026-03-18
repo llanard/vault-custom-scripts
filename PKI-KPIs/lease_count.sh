@@ -50,28 +50,30 @@ vault_request() {
     echo "$resp"
 }
 
-# Iteratively list all namespaces starting from parent.
+# Recursively list all namespaces starting from parent.
+# Results are printed one per line and captured by the caller.
 list_namespaces() {
-    local -a stack=("${1:-}")
-    while [[ ${#stack[@]} -gt 0 ]]; do
-        local current="${stack[0]}"
-        if [[ ${#stack[@]} -gt 1 ]]; then stack=("${stack[@]:1}"); else stack=(); fi
+    local parent="${1:-}"
+    if [[ -n "$parent" ]]; then
+        echo "$parent"
+    else
+        echo ""
+    fi
 
-        echo "$current"
+    local resp keys
+    resp=$(vault_request "LIST" "sys/namespaces" "$parent") || return 0
+    keys=$(echo "$resp" | jq -r '.data.keys[]? // empty' 2>/dev/null) || return 0
 
-        local resp keys
-        resp=$(vault_request "LIST" "sys/namespaces" "$current") || continue
-        keys=$(echo "$resp" | jq -r '.data.keys[]? // empty' 2>/dev/null) || continue
-
-        while IFS= read -r key; do
-            [[ -z "$key" ]] && continue
-            if [[ -n "$current" ]]; then
-                stack+=("${current}${key}")
-            else
-                stack+=("$key")
-            fi
-        done <<< "$keys"
-    done
+    local key child
+    while IFS= read -r key; do
+        [[ -z "$key" ]] && continue
+        if [[ -n "$parent" ]]; then
+            child="${parent}${key}"
+        else
+            child="$key"
+        fi
+        list_namespaces "$child"
+    done <<< "$keys"
 }
 
 # Iteratively count leases under a given prefix.
