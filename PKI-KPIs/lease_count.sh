@@ -55,7 +55,7 @@ list_namespaces() {
     local -a stack=("${1:-}")
     while [[ ${#stack[@]} -gt 0 ]]; do
         local current="${stack[0]}"
-        stack=("${stack[@]:1}")
+        if [[ ${#stack[@]} -gt 1 ]]; then stack=("${stack[@]:1}"); else stack=(); fi
 
         echo "$current"
 
@@ -82,7 +82,7 @@ count_leases() {
 
     while [[ ${#stack[@]} -gt 0 ]]; do
         local current="${stack[0]}"
-        stack=("${stack[@]:1}")
+        if [[ ${#stack[@]} -gt 1 ]]; then stack=("${stack[@]:1}"); else stack=(); fi
 
         local resp keys
         resp=$(vault_request "LIST" "sys/leases/lookup/${current}" "$namespace") || continue
