@@ -106,7 +106,7 @@ configure_auto_tidy() {
     tidy_config=$(cat <<'TIDYJSON'
 {
     "enabled": true,
-    "interval_duration": "12h",
+    "interval_duration": "288h",
     "tidy_cert_store": true,
     "tidy_revoked_certs": true,
     "tidy_revoked_cert_issuer_associations": true,
