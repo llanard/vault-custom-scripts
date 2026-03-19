@@ -91,6 +91,14 @@ list_pki_engines() {
     ' 2>/dev/null || true
 }
 
+# Count certificates in a PKI engine.
+count_certificates() {
+    local pki_path="$1" namespace="${2:-}"
+    local resp
+    resp=$(vault_request "LIST" "${pki_path}certs" "$namespace") || { echo 0; return; }
+    echo "$resp" | jq -r '[.data.keys[]? // empty] | length' 2>/dev/null || echo 0
+}
+
 # Configure auto-tidy on a PKI engine.
 configure_auto_tidy() {
     local pki_path="$1" namespace="${2:-}"
@@ -164,12 +172,23 @@ main() {
         printf "[%d/%d] Namespace: %s (%d PKI engines)\n" "$i" "$total_ns" "$ns_display" "${#pki_engines[@]}"
 
         for pki in "${pki_engines[@]}"; do
+            local cert_count wait_seconds
+            cert_count=$(count_certificates "$pki" "$ns")
+            cert_count=${cert_count:-0}
+            # 100 certs/sec tidy rate + 60s safety margin
+            wait_seconds=$(( (cert_count / 100) + 60 ))
+
             if $DRY_RUN; then
-                printf "  [DRY-RUN] Would configure auto-tidy on %s\n" "$pki"
+                printf "  [DRY-RUN] Would configure auto-tidy on %s (%d certs, would sleep %ds)\n" "$pki" "$cert_count" "$wait_seconds"
                 total_configured=$((total_configured + 1))
             elif configure_auto_tidy "$pki" "$ns"; then
-                printf "  [OK]      Auto-tidy configured on %s\n" "$pki"
+                printf "  [OK]      Auto-tidy configured on %s (%d certs)\n" "$pki" "$cert_count"
                 total_configured=$((total_configured + 1))
+                if [[ $cert_count -gt 0 ]]; then
+                    printf "            Waiting %ds for tidy to complete (%d certs @ 100 certs/s + 60s buffer)...\n" "$wait_seconds" "$cert_count"
+                    sleep "$wait_seconds"
+                    printf "            Done waiting.\n"
+                fi
             else
                 printf "  [FAIL]    Could not configure auto-tidy on %s\n" "$pki"
                 total_failed=$((total_failed + 1))
