@@ -2,7 +2,7 @@
 
 Démo courte : envelope encryption côté client via la sous-commande CLI `vault transit envelope`.
 
-Toutes les commandes s'exécutent depuis `/Users/louis.lanard/demos/vault2.0/`.
+Toutes les commandes s'exécutent depuis `~/demos/vault2.0/`.
 
 ---
 
@@ -11,7 +11,7 @@ Toutes les commandes s'exécutent depuis `/Users/louis.lanard/demos/vault2.0/`.
 ### Démarrer Vault Enterprise
 
 ```sh
-cd /Users/louis.lanard/demos/vault2.0/
+cd ~/demos/vault2.0/
 
 # démarre le serveur en arrière-plan (config : vault.hcl, storage raft local, license ADP)
 ./vault server -config=vault.hcl > vault.log 2>&1 &
