@@ -58,6 +58,54 @@ vault write sys/managed-keys/pkcs11/hsm-signer-"$MONTH" \
 
 ---
 
+## Picking between Path A and Path B
+
+For monthly automation, **Path A** is the better default.
+
+Why, for this use case:
+
+- **One control plane.** Your rotation job already has a Vault token with
+  the scoped policy from Step 6. Path A keeps the entire rotation inside
+  that one credential and one set of API calls. Path B needs a second
+  credential (HSM PIN on an admin host that can talk PKCS#11), a second
+  tool (`pkcs11-tool` or vendor CLI), and a mechanism to keep those two
+  in sync — more moving parts that can drift.
+- **Single audit trail.** Every action — "create managed key", "generate
+  key in HSM", "rotate transit" — shows up in Vault's audit log against
+  one token. In Path B, keygen is in the HSM's audit log; Vault only
+  sees the registration, so reconstructing "who rotated what and when"
+  means joining two logs.
+- **Atomic-ish.** If Path B's HSM keygen succeeds but the subsequent
+  Vault registration fails, you have an orphan HSM key that no one is
+  tracking. Path A binds the two together — either the managed-key
+  entry exists and its `test/sign` works, or the rotation didn't
+  happen.
+
+**Pick Path B only if one of these is true:**
+
+- **Compliance requires it.** Some FIPS 140 / PCI-HSM / internal audit
+  regimes mandate that key generation be initiated from HSM-native
+  tooling logged on the HSM itself, not via a PKCS#11 caller. If that's
+  on your compliance checklist, the source-of-truth for "this key was
+  generated inside the HSM" has to be the HSM's own audit record.
+- **Separation of duties.** Your org policy says the Vault admin must
+  never hold the ability to create keys in the HSM. Path B gives you a
+  clean split: HSM team generates, hands off label/id, Vault team
+  registers.
+- **You want per-key generation policies.** Some HSMs let you attach
+  label-prefix ACLs, attribute templates, or partition quotas to
+  manually-created keys that aren't easily expressed through Vault's
+  `allow_generate_key`. If you rely on those, Path B keeps them
+  enforceable.
+
+**Important guardrail for Path A.** Use a fresh managed-key name every
+month (`hsm-signer-YYYY-MM`) and include `allow_generate_key=true`
+*only* on that month's entry. Don't leave `allow_generate_key=true` on
+long-lived managed keys — that turns one stolen token into unlimited
+HSM keygen.
+
+---
+
 ## Step 2. Allow Transit to reach the new managed key
 
 Managed keys must be on the mount's allowlist.
@@ -107,6 +155,49 @@ vault read transit/keys/payments-signer | grep -E 'latest_version|min_decryption
 
 ---
 
+## What rotation does not do
+
+Rotation adds a new key and points new signatures at it — it does
+**not** erase the old key. Neither Path A nor Path B destroys anything
+during rotation. Destruction is Step 5, done later and explicitly.
+
+State after rotation:
+
+| Object | State after rotation |
+|---|---|
+| Old HSM keypair (`payments-signer-v1`) | Still in HSM, untouched |
+| Old managed-key entry (`hsm-signer-v1`) | Still registered in Vault |
+| Transit version N (references `hsm-signer-v1`) | Still valid, still verifies old signatures |
+| New HSM keypair (`payments-signer-2026-05`) | Created |
+| New managed-key entry (`hsm-signer-2026-05`) | Registered |
+| Transit version N+1 (references new one) | Newly created, now the default for sign |
+
+This is on purpose, for two reasons:
+
+1. **Verification of past signatures.** Anything signed last month was
+   produced by the old HSM key. Destroying that key immediately means
+   you can no longer prove those signatures are valid. Transit keeps
+   versioned access to old managed keys so
+   `transit/verify/payments-signer` still succeeds against older
+   versions — but only as long as the referenced managed key (and thus
+   the HSM key) still exists.
+2. **Rollback window.** If the new key turns out to be broken (wrong
+   mechanism, wrong bit length, HSM partition config issue), you want
+   the old one still reachable so you can bump
+   `min_encryption_version` back down and keep signing while you fix
+   it.
+
+**Common footgun:** `vault delete sys/managed-keys/pkcs11/hsm-signer-v1`
+*sounds* like it cleans up the HSM. It does not. It only drops Vault's
+pointer. Over time you can accumulate orphan keys in the HSM that no
+one references — expensive on partitioned HSMs that meter object
+count. Always pair the Vault-side delete with an explicit HSM-side
+delete (the final `pkcs11-tool --delete-object` commands in Step 5),
+and include both in your monthly automation — targeting the
+rotation-before-last, not this rotation.
+
+---
+
 ## Step 5. Retire old versions and the old HSM key
 
 Do this one rotation later, or whenever your retention policy allows.
@@ -119,9 +210,16 @@ vault write transit/keys/payments-signer/config \
     min_decryption_version=N+1 \
     deletion_allowed=true
 
-vault delete sys/managed-keys/pkcs11/hsm-signer-v1       # removes the Vault reference
-# Destroy the key in the HSM with your vendor tool
-# (pkcs11-tool --delete-object, vendor CLI, ...).
+vault delete sys/managed-keys/pkcs11/hsm-signer-v1       # removes only the Vault reference
+
+# The HSM key material is still in the HSM at this point — delete it
+# explicitly (private and public halves). Use vendor CLI if you have
+# one, otherwise pkcs11-tool:
+pkcs11-tool --module /opt/hsm/lib/libsofthsm2.so --login --pin "$HSM_PIN" \
+    --delete-object --type privkey --label payments-signer-v1
+pkcs11-tool --module /opt/hsm/lib/libsofthsm2.so --login --pin "$HSM_PIN" \
+    --delete-object --type pubkey --label payments-signer-v1
+
 vault secrets tune -allowed-managed-keys="hsm-signer-$MONTH" transit/
 ```
 
